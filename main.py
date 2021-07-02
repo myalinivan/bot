@@ -1,5 +1,5 @@
 import random
-
+import re
 import aiogram
 import os
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
@@ -51,21 +51,21 @@ async def start_creating_new_event(msg: aiogram.types.Message):
 async def event_created(message: aiogram.types.Message, state: FSMContext):
     async with state.proxy() as data:
         data['title'] = message.text.lower()
-    rand_var = random.randint(1, 3)
-    question = ""
-    if rand_var == 1:
-        question = "Когда будет это событие?"
-    if rand_var == 2:
-        question = "Введите дату события"
-    if rand_var == 3:
-        question = "Дата события?"
+        rand_var = random.randint(1, 3)
+        question = ""
+        if rand_var == 1:
+            question = "Когда будет это событие?"
+        if rand_var == 2:
+            question = "Введите дату события"
+        if rand_var == 3:
+            question = "Дата события?"
     await bot.send_message(message.from_user.id, question)
     await CreateEvent.next()
 
 
 @dp.message_handler(content_types=['text'], state=CreateEvent.WAITING_OF_NOTICE_DATE)
 async def create_notice_date(state: FSMContext, message: aiogram.types.Message):
-
+    msg = re.search(r'[0-3][1-9]\.[0-1][0-9]\.')
 
 if __name__ == '__main__':
     aiogram.executor.start_polling(dp)
