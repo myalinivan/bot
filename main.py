@@ -13,10 +13,11 @@ db = client['expenses_bot']
 collection = db['expenses']
 
 
-class CreateEvent(StatesGroup):
-    CATEGORY_SET = State()
+class BotStates(StatesGroup):
     CREATING_CATEGORY = State()
-    CATEGORY_CREATED = State()
+    SHOP_TITLE = State()
+    DETAILS_CONFIRM = State()
+    USER_INPUT_DETAILS = State()
 
 
 @dp.message_handler(commands=['help'])
@@ -51,7 +52,36 @@ async def start_creating_new_event(msg: aiogram.types.Message):
     Обрабатываем сообщение о создании новых расходов
     """
     await bot.send_message(msg.from_user.id, "По какой категории?")
-    await CreateEvent.CREATING_CATEGORY.set()
+    await BotStates.CREATING_CATEGORY.set()
+
+
+@dp.message_handler(content_types=['text'], state=BotStates.CREATING_CATEGORY)
+async def expenses_title(message: aiogram.types.Message, state: FSMContext):
+    async with state.proxy() as data:
+        data["category"] = message.text.lower()
+        await BotStates.SHOP_TITLE.set()
+        await bot.send_message(message.from_user.id, "Название магазина?")
+
+
+@dp.message_handler(content_types=["text"], state=BotStates.SHOP_TITLE)
+async def shop_title(message: aiogram.types.Message, state: FSMContext):
+    async with state.proxy() as data:
+        data["shop"] = message.text.lower()
+        await BotStates.DETAILS_CONFIRM.set()
+        await bot.send_message(message.from_user.id, "Хотите указать детальную информацию о покупках?")
+
+
+@dp.message_handler(lambda message: message.text.lower() == "да", content_types=['text'],
+                    state=BotStates.DETAILS_CONFIRM)
+async def details(message: aiogram.types.Message):
+    await BotStates.USER_INPUT_DETAILS.set()
+    await bot.send_message(message.from_user.id, "вводите \"название продукта: цена\"")
+
+
+@dp.message_handler(content_types=["text"], state=BotStates.USER_INPUT_DETAILS)
+async def user_input(message: aiogram.types.Message, state: FSMContext):
+    async with state.proxy() as data:
+        user_data = str(message.text.lower()).split(':')
 
 
 @dp.message_handler(lambda message: message.text.lower() == "отмена", content_types=["text"], state='*')
@@ -62,62 +92,6 @@ async def cancel_all(msg: aiogram.types.Message, state: FSMContext):
     await state.finish()
     await bot.send_message(msg.from_user.id, "Действие отменено")
 
-
-@dp.message_handler(lambda message: message.text.lower() == "новая категория", content_types=['text'], state="*")
-async def event_created(msg: aiogram.types.Message):
-    """
-    Обрабатываем сообщение "новая категория".
-    """
-    await bot.send_message(msg.from_user.id, "Имя новой категории?")
-    await CreateEvent.CREATING_CATEGORY.set()
-
-
-@dp.message_handler(content_types=['text'], state=CreateEvent.CREATING_CATEGORY)
-async def new_category(msg: aiogram.types.Message, state: FSMContext):
-    """
-    Данный обработчик текста реагирует на любое последующее сообщение. И записывает и сразу посылает в БД
-    название новой категории. Состояние не меняется.
-    """
-    async with state.proxy() as data:
-        data['new category'] = msg.text.lower()
-        if collection.count_documents({"user_id": str(msg.from_user.id)}) != 0:
-            # Подсчитываем количество пользователей для понимания существуют ли вообще запись
-            if collection.count_documents({"user_id": str(msg.from_user.id),
-                                           "categories:": {"category": data["new category"]}}) == 0:
-                # Подсчитываем количество категорий с таким же именем для понмания существует ли вообще такая категория
-                # Если нет - то создаём запись к существующему пользователю
-                category = {
-                    "category": data["new category"],
-                    "expenses": {}
-                }
-                collection["categories"].insert_one(category)
-                await bot.send_message(msg.from_user.id, 'Новая категория создана')
-                await CreateEvent.CATEGORY_CREATED.set()
-                await bot.send_message(msg.from_user.id, "Начать выбор категории?")
-            else:
-                await bot.send_message(msg.from_user.id, "Эта категория существует!")
-                return
-
-
-@dp.message_handler(lambda message: message.text.lower() == "да", content_types=['text'],
-                    state=CreateEvent.CATEGORY_CREATED)
-async def setting_category(msg: aiogram.types.Message, state: FSMContext):
-    """
-    При ответе "да" на вопрос о продолжении создания новой категории выставляем состояние "Category_set"
-    """
-    await state.finish()
-    await CreateEvent.CATEGORY_SET.set()
-    await bot.send_message(msg.from_user.id, "Какую категорию расходов вы хотите выбрать?")
-
-
-@dp.message_handler(lambda message: message.text.lower() == "нет", content_types=['text'],
-                    state=CreateEvent.CATEGORY_CREATED)
-async def finish_setting_category(msg: aiogram.types.Message, state: FSMContext):
-    """
-    При ответе "нет" на вопрос о продолжении создания категории сбрасываем состояние
-    """
-    await state.finish()
-    await bot.send_message(msg.from_user.id, "Выбор категории отменён")
 
 if __name__ == '__main__':
     aiogram.executor.start_polling(dp)
